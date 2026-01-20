@@ -131,6 +131,7 @@ async function fetchGeniusSong(songId, geniusToken) {
  */
 export default {
     async fetch(request, env, ctx) {
+        // 1. Security Check (Must happen before cache check for safety)
         const clientSecret = request.headers.get("X-Proxy-Secret");
         if (clientSecret !== env.PROXY_SECRET) {
             return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
@@ -139,6 +140,7 @@ export default {
             });
         }
 
+        // 2. Rate Limiting
         if (env.RATE_LIMITER) {
             const clientIP = request.headers.get("CF-Connecting-IP") || "anonymous";
             const { success } = await env.RATE_LIMITER.limit({ key: clientIP });
@@ -150,6 +152,19 @@ export default {
             }
         }
 
+        // 3. Cache Match (Check if we already have this exact request)
+        const cache = caches.default;
+        let response = await cache.match(request);
+
+        if (response) {
+            // Found in cache! Return immediately.
+            // We clone the response to add a custom header so you can verify the HIT
+            let hitResponse = new Response(response.body, response);
+            hitResponse.headers.set('X-Proxy-Cache', 'HIT');
+            return hitResponse;
+        }
+
+        // 4. Standard Handlers (OPTIONS, Method check)
         if (request.method === 'OPTIONS') {
             return new Response(null, {
                 headers: {
@@ -168,6 +183,7 @@ export default {
             });
         }
 
+        // 5. Logic Execution (This is the slow part)
         const url = new URL(request.url);
         const path = url.pathname;
         const geniusToken = env.GENIUS_ACCESS_TOKEN;
@@ -191,14 +207,23 @@ export default {
                 return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
             }
 
-            return new Response(JSON.stringify(data), {
+            // 6. Create Response & Store in Cache
+            // s-maxage=86400 tells Cloudflare to keep this for 24 hours
+            response = new Response(JSON.stringify(data), {
                 status: 200,
                 headers: {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'public, s-maxage=3600',
+                    'Cache-Control': 'public, s-maxage=86400, max-age=3600',
+                    'X-Proxy-Cache': 'MISS'
                 },
             });
+
+            // ctx.waitUntil ensures the cache write happens in the background 
+            // after the user gets their data
+            ctx.waitUntil(cache.put(request, response.clone()));
+
+            return response;
         } catch (error) {
             return new Response(JSON.stringify({ error: error.message }), {
                 status: 500,
