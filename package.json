@@ -1,0 +1,23 @@
+{
+  "name": "nichegeniusproxy",
+  "version": "1.0.0",
+  "description": "Fast Cloudflare Worker proxy for Genius API",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker",
+    "genius",
+    "api",
+    "proxy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+name = "nichegeniusproxy"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+# Environment variables (set via wrangler secret put GENIUS_ACCESS_TOKEN)
+# Or use vars for non-sensitive config
+# vars = { }
+
+# Route configuration - uncomment and set your domain
+# routes = [
+#   { pattern = "yourdomain.com/song/*", zone_name = "yourdomain.com" },
+#   { pattern = "yourdomain.com/artist/*", zone_name = "yourdomain.com" }
+# ]
+
+# Or use workers.dev subdomain (default)
+# No routes needed if using *.workers.dev
+
+# Performance optimizations
+[build]
+command = ""
+
+# Limits
+[limits]
+cpu_ms = 50
+
+# KV namespaces (if needed in future)
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
