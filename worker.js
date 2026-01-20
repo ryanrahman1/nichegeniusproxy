@@ -130,125 +130,80 @@ async function fetchGeniusSong(songId, geniusToken) {
  * Main request handler
  */
 export default {
-    async fetch(request, env) {
-        // Handle CORS preflight
+    async fetch(request, env, ctx) {
+        const clientSecret = request.headers.get("X-Proxy-Secret");
+        if (clientSecret !== env.PROXY_SECRET) {
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
+                status: 401,
+                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+            });
+        }
+
+        if (env.RATE_LIMITER) {
+            const clientIP = request.headers.get("CF-Connecting-IP") || "anonymous";
+            const { success } = await env.RATE_LIMITER.limit({ key: clientIP });
+            if (!success) {
+                return new Response(JSON.stringify({ error: 'Too Many Requests' }), { 
+                    status: 429,
+                    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+                });
+            }
+        }
+
         if (request.method === 'OPTIONS') {
             return new Response(null, {
                 headers: {
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Secret',
                     'Access-Control-Max-Age': '86400',
                 },
             });
         }
 
-        // Only allow GET requests
         if (request.method !== 'GET') {
             return new Response('Method not allowed', { 
-                status: 405,
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                }
+                status: 405, 
+                headers: { 'Access-Control-Allow-Origin': '*' } 
             });
         }
 
         const url = new URL(request.url);
         const path = url.pathname;
-
-        // Check for Genius token
         const geniusToken = env.GENIUS_ACCESS_TOKEN;
+
         if (!geniusToken) {
-            return new Response('GENIUS_ACCESS_TOKEN not configured', { 
-                status: 500,
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                }
-            });
+            return new Response('GENIUS_ACCESS_TOKEN not configured', { status: 500 });
         }
 
-        // Route: /song/{id}
         const songMatch = path.match(/^\/song\/(\d+)$/);
-        if (songMatch) {
-            try {
-                const songId = songMatch[1];
-                const data = await fetchGeniusSong(songId, geniusToken);
-                
-                return new Response(JSON.stringify(data), {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*',
-                        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-                    },
-                });
-            } catch (error) {
-                return new Response(JSON.stringify({ 
-                    error: error.message || 'Failed to fetch song' 
-                }), {
-                    status: 500,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*',
-                    },
-                });
-            }
-        }
-
-        // Route: /artist/{id}
         const artistMatch = path.match(/^\/artist\/(\d+)$/);
-        if (artistMatch) {
-            try {
-                const artistId = artistMatch[1];
-                const data = await fetchGeniusArtist(artistId, geniusToken);
-                
-                return new Response(JSON.stringify(data), {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*',
-                        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-                    },
-                });
-            } catch (error) {
-                return new Response(JSON.stringify({ 
-                    error: error.message || 'Failed to fetch artist' 
-                }), {
-                    status: 500,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*',
-                    },
-                });
-            }
-        }
 
-        // Root path - return API info
-        if (path === '/' || path === '') {
-            return new Response(JSON.stringify({
-                message: 'Genius API Proxy',
-                endpoints: {
-                    song: '/song/{songId}',
-                    artist: '/artist/{artistId}'
-                }
-            }), {
+        try {
+            let data;
+            if (songMatch) {
+                data = await fetchGeniusSong(songMatch[1], geniusToken);
+            } else if (artistMatch) {
+                data = await fetchGeniusArtist(artistMatch[1], geniusToken);
+            } else if (path === '/' || path === '') {
+                data = { message: 'Genius API Proxy', endpoints: { song: '/song/{id}', artist: '/artist/{id}' } };
+            } else {
+                return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+            }
+
+            return new Response(JSON.stringify(data), {
                 status: 200,
                 headers: {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, s-maxage=3600',
                 },
             });
+        } catch (error) {
+            return new Response(JSON.stringify({ error: error.message }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            });
         }
-
-        // 404 for unknown routes
-        return new Response(JSON.stringify({ 
-            error: 'Not found. Use /song/{id} or /artist/{id}' 
-        }), {
-            status: 404,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-            },
-        });
     },
 };
